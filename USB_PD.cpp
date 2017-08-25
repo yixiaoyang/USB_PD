@@ -86,6 +86,11 @@ int USB_PD::init(void) {
 #endif
 
 	timeout_deadline = 0;
+
+	pdo_mode = PDO_SELECT_MODE_AUTO;
+	target_mv = 5000;
+
+	return 0;
 }
 
 void USB_PD::pd_state_machine(void) {
@@ -1394,7 +1399,7 @@ int USB_PD::pdo_busy(void)
 
 int USB_PD::pd_transmit(enum tcpm_transmit_type type,
 		       uint16_t header, const uint32_t *data) {
-	int res;
+	int res = TCPC_TX_COMPLETE_SUCCESS;
 
 	// If comms are disabled, do not transmit, return error
 	if (!pd_comm_enabled)
@@ -2719,8 +2724,37 @@ int USB_PD::send_request(uint32_t rdo) {
  * @return index of PDO within source cap packet
  */
 int USB_PD::find_pdo_index(int cnt, uint32_t *src_caps, int max_mv) {
-	uint32_t i, uw, max_uw = 0, mv, ma;
 	int ret = -1;
+#if 1
+	if(cnt <= 0)
+		return ret;
+	if(pdo_mode == PDO_SELECT_MODE_FIX){
+		uint32_t i = 0, uw, mv, ma;
+		/* Get max power that is under our max voltage input */
+		for (i = 0; i < cnt; i++) {
+			mv = ((src_caps[i] >> 10) & 0x3FF) * 50;
+			/* Skip any voltage not supported by this board */
+			if (!pd_is_valid_input_voltage(mv))
+				continue;
+
+			if ((src_caps[i] & PDO_TYPE_MASK) == PDO_TYPE_BATTERY) {
+				uw = 250000 * (src_caps[i] & 0x3FF);
+			} else {
+				ma = (src_caps[i] & 0x3FF) * 10;
+				ma = MIN(ma, PD_MAX_CURRENT_MA);
+				uw = ma * mv;
+			}
+
+			if ( abs(mv - target_mv) < 500) {
+				ret = i;
+				break;
+			}
+		}
+	}else{
+		ret = 0;
+	}
+#else
+	uint32_t i, uw, max_uw = 0, mv, ma;
 #ifdef PD_PREFER_LOW_VOLTAGE
 	uint32_t cur_mv = 0;
 #endif
@@ -2758,6 +2792,7 @@ int USB_PD::find_pdo_index(int cnt, uint32_t *src_caps, int max_mv) {
 		}
 #endif
 	}
+#endif
 	return ret;
 }
 

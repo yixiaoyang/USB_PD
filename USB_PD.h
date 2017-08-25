@@ -11,6 +11,7 @@
 #include <USB_TCPM.h>
 
 #define CONFIG_USB_PD_DUAL_ROLE
+#define PD_PREFER_LOW_VOLTAGE
 
 /* Standard macros / definitions */
 #ifndef MAX
@@ -247,6 +248,11 @@ enum pd_rx_errors {
 #define PDO_FIXED(mv, ma, flags) (PDO_FIXED_VOLT(mv) |\
                   PDO_FIXED_CURR(ma) | (flags))
 
+#define PDO_FIX_VOLT(x)   (((x >> 10) & 0x3FF) * 50)
+#define PDO_MIN_VOLT(x)   (((x >> 10) & 0x3FF) * 50)
+#define PDO_MAX_VOLT(x)   (((x >> 20) & 0x3FF) * 50)
+#define PDO_MAX_CUR(x)    (((x >> 0 ) & 0x3FF) * 10)
+
 #define PDO_VAR_MAX_VOLT(mv) ((((mv) / 50) & 0x3FFl) << 20)
 #define PDO_VAR_MIN_VOLT(mv) ((((mv) / 50) & 0x3FFl) << 10)
 #define PDO_VAR_OP_CURR(ma)  ((((ma) / 10) & 0x3FFl) << 0)
@@ -482,6 +488,12 @@ enum pd_dual_role_states {
     PD_DRP_FORCE_SOURCE,
 };
 
+enum pdo_select_mode{
+    PDO_SELECT_MODE_AUTO,
+    PDO_SELECT_MODE_FIX,
+    PDO_SELECT_MODE_MAX
+};
+
 /* Microsecond timestamp. */
 typedef union {
     uint64_t val;
@@ -499,7 +511,7 @@ typedef union {
  * As this library gets more organized, these should go 
  * somwhere specific. 
  */
-#define CONFIG_USB_PD_PULLUP TYPEC_RP_1A5
+#define CONFIG_USB_PD_PULLUP TYPEC_RP_3A0
 /* Define typical operating power and max power */
 #define PD_OPERATING_POWER_MW 100000ul
 #define PD_MAX_POWER_MW       100000ul
@@ -722,6 +734,10 @@ class USB_PD {
 
         /* Enable varible for Try.SRC states */
         uint8_t pd_try_src_enable;
+
+        enum pdo_select_mode pdo_mode;
+        int target_mv;
+        int target_ma;
 #endif
 };
 
