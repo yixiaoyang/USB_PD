@@ -834,6 +834,7 @@ defined(CONFIG_CASE_CLOSED_DEBUG_EXTERNAL)
 					typec_curr = 0;
 				}
 #endif
+			}else{
 			}
 
 #ifdef CONFIG_CHARGE_MANAGER
@@ -1522,6 +1523,10 @@ void USB_PD::handle_data_request(uint16_t head,
 	int type = PD_HEADER_TYPE(head);
 	int cnt = PD_HEADER_CNT(head);
 
+#if PD_DEBUG
+	pd_debug2("<- data: ",type);
+#endif
+
 	switch (type) {
 #ifdef CONFIG_USB_PD_DUAL_ROLE
 	case PD_DATA_SOURCE_CAP:
@@ -1541,8 +1546,12 @@ void USB_PD::handle_data_request(uint16_t head,
 
 			process_source_cap(pd_src_cap_cnt, pd_src_caps);
 			/* Source will resend source cap on failure */
-			int rv;
-			rv = send_request_msg(1);
+			//int rv;
+#if PD_DEBUG
+			pd_debug("-> request");
+#endif
+			send_request_msg(1);
+			//set_state(PD_STATE_SNK_READY);
 		}
 		break;
 #endif /* CONFIG_USB_PD_DUAL_ROLE */
@@ -1600,16 +1609,22 @@ void USB_PD::handle_data_request(uint16_t head,
 	}
 }
 
-void USB_PD::handle_ctrl_request(uint16_t head, 
+void USB_PD::handle_ctrl_request(uint16_t head,
 		uint32_t *payload) {
 	int type = PD_HEADER_TYPE(head);
 	int res;
 
 	switch (type) {
 	case PD_CTRL_GOOD_CRC:
+#if PD_DEBUG
+		pd_debug("<- good crc");
+#endif
 		pd_transmit_complete(TCPC_TX_COMPLETE_SUCCESS);
 		break;
 	case PD_CTRL_PING:
+#if PD_DEBUG
+		pd_debug("<- ping");
+#endif
 		/* Nothing else to do */
 		break;
 	case PD_CTRL_GET_SOURCE_CAP:
@@ -1624,11 +1639,17 @@ void USB_PD::handle_ctrl_request(uint16_t head,
 #else
 		send_control(PD_CTRL_REJECT);
 #endif
+#if PD_DEBUG
+		pd_debug("<- get sink cap");
+#endif
 		break;
 #ifdef CONFIG_USB_PD_DUAL_ROLE
 	case PD_CTRL_GOTO_MIN:
 		break;
 	case PD_CTRL_PS_RDY:
+#if PD_DEBUG
+		pd_debug("<- PD_CTRL_PS_RDY");
+#endif
 		if (task_state == PD_STATE_SNK_SWAP_SRC_DISABLE) {
 			set_state(PD_STATE_SNK_SWAP_STANDBY);
 		} else if (task_state == PD_STATE_SRC_SWAP_STANDBY) {
@@ -1648,6 +1669,9 @@ void USB_PD::handle_ctrl_request(uint16_t head,
 #endif
 		} else if (task_state == PD_STATE_SNK_DISCOVERY) {
 			/* Don't know what power source is ready. Reset. */
+#if PD_DEBUG
+			pd_debug("Don't know what power source is ready. Reset.");
+#endif
 			set_state(PD_STATE_HARD_RESET_SEND);
 		} else if (task_state == PD_STATE_SNK_SWAP_STANDBY) {
 			/* Do nothing, assume this is a redundant PD_RDY */
@@ -1664,8 +1688,16 @@ void USB_PD::handle_ctrl_request(uint16_t head,
 		}
 		break;
 #endif
-	case PD_CTRL_REJECT:
 	case PD_CTRL_WAIT:
+#if PD_DEBUG
+		pd_debug(" <- wait");
+#endif
+		break;
+	case PD_CTRL_REJECT:
+	//case PD_CTRL_WAIT:
+#if PD_DEBUG
+		pd_debug(" <- reject");
+#endif
 		if (task_state == PD_STATE_DR_SWAP)
 			set_state(READY_RETURN_STATE);
 #ifdef CONFIG_USBC_VCONN_SWAP
@@ -1683,6 +1715,9 @@ void USB_PD::handle_ctrl_request(uint16_t head,
 #endif
 		break;
 	case PD_CTRL_ACCEPT:
+#if PD_DEBUG
+		pd_debug("<- accept");
+#endif
 		if (task_state == PD_STATE_SOFT_RESET) {
 			/*
 			 * For the case that we sent soft reset in SNK_DISCOVERY
@@ -1716,6 +1751,9 @@ void USB_PD::handle_ctrl_request(uint16_t head,
 		}
 		break;
 	case PD_CTRL_SOFT_RESET:
+#if PD_DEBUG
+		pd_debug("<- PD_CTRL_SOFT_RESET");
+#endif
 		execute_soft_reset();
 		/* We are done, acknowledge with an Accept packet */
 		send_control(PD_CTRL_ACCEPT);
@@ -1804,7 +1842,9 @@ int USB_PD::send_control(int type) {
 			data_role, msg_id, 0);
 
 	bit_len = pd_transmit(TCPC_TX_SOP, header, NULL);
-
+#if PD_DEBUG
+	pd_debug2("-> ctrl: ",type);
+#endif
 	return bit_len;
 }
 
@@ -2623,12 +2663,16 @@ int USB_PD::send_request_msg(int always_send_request) {
 			       charging && max_request_allowed ?
 					PD_REQUEST_MAX : PD_REQUEST_VSAFE5V);
 
-	if (res != EC_SUCCESS)
+	if (res != EC_SUCCESS){
 		/*
 		 * If fail to choose voltage, do nothing, let source re-send
 		 * source cap
 		 */
+#if PD_DEBUG
+		pd_debug("build_request: failed");
+#endif
 		return -1;
+	}
 
 	/* Don't re-request the same voltage */
 	if (!always_send_request && prev_request_mv == supply_voltage)
@@ -2638,8 +2682,12 @@ int USB_PD::send_request_msg(int always_send_request) {
 	this->supply_voltage = supply_voltage;
 	this->prev_request_mv = supply_voltage;
 	res = send_request(rdo);
-	if (res < 0)
+	if (res < 0){
+#if PD_DEBUG
+		pd_debug("build_request: pdo_index = -1");
+#endif
 		return res;
+	}
 	set_state(PD_STATE_SNK_REQUESTED);
 	return EC_SUCCESS;
 }
@@ -2659,9 +2707,12 @@ int USB_PD::build_request(int cnt, uint32_t *src_caps, uint32_t *rdo,
 		pdo_index = find_pdo_index(cnt, src_caps, max_request_mv);
 
 	/* If could not find desired pdo_index, then return error */
-	if (pdo_index == -1)
+	if (pdo_index == -1){
+#if PD_DEBUG
+		pd_debug("build_request: pdo_index = -1");
+#endif
 		return -EC_ERROR_UNKNOWN;
-
+	}
 	extract_pdo_power(src_caps[pdo_index], ma, mv);
 
 	uw = *ma * *mv;

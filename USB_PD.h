@@ -12,6 +12,7 @@
 
 #define CONFIG_USB_PD_DUAL_ROLE
 #define PD_PREFER_LOW_VOLTAGE
+#define PD_DEBUG 0
 
 /* Standard macros / definitions */
 #ifndef MAX
@@ -537,6 +538,10 @@ int pd_board_check_request(uint32_t rdo);
 int pd_check_data_swap(int port, int data_role);
 int pd_check_power_swap(int port);
 void pd_execute_data_swap(int port, int data_role);
+#if PD_DEBUG
+void pd_debug(char* str);
+void pd_debug2(char* str, int val);
+#endif
 /* Default USB data role when a USB PD debug accessory is seen */
 #define CONFIG_USB_PD_DEBUG_DR PD_ROLE_DFP
 /*
